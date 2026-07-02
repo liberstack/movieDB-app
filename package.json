@@ -4,20 +4,22 @@
   "description": "Aplicação web para buscar filmes e visualizar informações detalhadas usando a API do OMDb. Projeto desenvolvido em TypeScript puro, sem frameworks ou bibliotecas externas.",
   "main": "index.js",
   "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/liberstack/movie-search-app.git"
+    "url": "git+https://github.com/liberstack/movieDB-app.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/liberstack/movie-search-app/issues"
+    "url": "https://github.com/liberstack/movieDB-app/issues"
   },
-  "homepage": "https://github.com/liberstack/movie-search-app#readme",
+  "homepage": "https://github.com/liberstack/movieDB-app#readme",
   "devDependencies": {
     "typescript": "^5.9.3"
   }

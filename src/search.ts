@@ -87,12 +87,25 @@ function buildUrl(title: string, type: string, page: number, y: number | null): 
 
 // ─── Data fetching ────────────────────────────────────────
 
+type FetchIdsResult = { ids: string[]; failedYears: number };
+
+/**
+ * Extrai totalResults de forma segura. A OMDb às vezes retorna o número
+ * formatado com vírgula de milhar (ex: "1,234"), e parseInt() sozinho
+ * para na vírgula e devolve só "1" — removemos as vírgulas antes.
+ */
+function parseTotalResults(raw: string | undefined): number {
+  const cleaned = (raw ?? "0").replace(/,/g, "");
+  const n = parseInt(cleaned, 10);
+  return isNaN(n) ? 0 : n;
+}
+
 async function fetchIds(
   title:     string,
   type:      string,
   startYear: number | null,
   endYear:   number | null
-): Promise<string[]> {
+): Promise<FetchIdsResult> {
   const yearList: (number | null)[] = [];
   if (startYear && endYear) {
     for (let y = startYear; y <= endYear; y++) yearList.push(y);
@@ -102,9 +115,16 @@ async function fetchIds(
 
   const seenIds = new Set<string>();
   const ids: string[] = [];
+  let failedYears = 0;
 
-  await Promise.all(
-    yearList.map(async (y: number | null) => {
+  // Fase 1: primeira página de cada ano, respeitando DETAIL_CONCURRENCY
+  // (antes disparava todos os anos em paralelo sem limite nenhum).
+  // Cada ano roda isolado em try/catch: um fetch que falha não derruba
+  // os outros anos nem a busca inteira.
+  const extraPageJobs: { y: number | null; page: number }[] = [];
+
+  await mapLimit(yearList, DETAIL_CONCURRENCY, async y => {
+    try {
       const data = await fetch(buildUrl(title, type, 1, y))
         .then(r => r.json() as Promise<OMDbSearchResponse>);
 
@@ -113,26 +133,33 @@ async function fetchIds(
         if (!seenIds.has(m.imdbID)) { seenIds.add(m.imdbID); ids.push(m.imdbID); }
       }
 
-      const total = Math.min(parseInt(data.totalResults ?? "0"), 100);
+      const total = Math.min(parseTotalResults(data.totalResults), 100);
       const pages = Math.min(Math.ceil(total / 10), 5);
-      if (pages > 1) {
-        const pageNumbers = Array.from({ length: pages - 1 }, (_, i) => i + 2);
-        const extras = await mapLimit(pageNumbers, DETAIL_CONCURRENCY, pageNum =>
-          fetch(buildUrl(title, type, pageNum, y))
-            .then(r => r.json() as Promise<OMDbSearchResponse>)
-        );
-        for (const p of extras) {
-          if (p.Search) {
-            for (const m of p.Search) {
-              if (!seenIds.has(m.imdbID)) { seenIds.add(m.imdbID); ids.push(m.imdbID); }
-            }
-          }
-        }
-      }
-    })
-  );
+      for (let p = 2; p <= pages; p++) extraPageJobs.push({ y, page: p });
+    } catch (err) {
+      console.error(`Falha ao buscar ano ${y}:`, err);
+      failedYears++;
+    }
+  });
 
-  return ids;
+  // Fase 2: páginas extras de todos os anos, também limitadas globalmente
+  // (antes cada ano tinha seu próprio limite de 6, então numa década
+  // inteira o fan-out real podia passar de 50 requests simultâneos).
+  await mapLimit(extraPageJobs, DETAIL_CONCURRENCY, async ({ y, page }) => {
+    try {
+      const data = await fetch(buildUrl(title, type, page, y))
+        .then(r => r.json() as Promise<OMDbSearchResponse>);
+
+      if (!data.Search) return;
+      for (const m of data.Search) {
+        if (!seenIds.has(m.imdbID)) { seenIds.add(m.imdbID); ids.push(m.imdbID); }
+      }
+    } catch (err) {
+      console.error(`Falha ao buscar página ${page} do ano ${y}:`, err);
+    }
+  });
+
+  return { ids, failedYears };
 }
 
 // ─── Filtering ────────────────────────────────────────────
@@ -203,7 +230,7 @@ async function searchMovies(
   resultCountEl.textContent = "";
 
   try {
-    const ids = await fetchIds(title, type, startYear, endYear);
+    const { ids, failedYears } = await fetchIds(title, type, startYear, endYear);
 
     if (!ids.length) {
       setStatus("No results found.", true);
@@ -238,10 +265,12 @@ async function searchMovies(
 
     const countMsg = `${results.length} result${results.length !== 1 ? "s" : ""}`;
     resultCountEl.textContent = countMsg;
-    setStatus(
-      failedCount > 0 ? `${countMsg} (${failedCount} falharam ao carregar)` : "",
-      failedCount > 0
-    );
+
+    const warnings: string[] = [];
+    if (failedCount > 0)  warnings.push(`${failedCount} falharam ao carregar`);
+    if (failedYears > 0)  warnings.push(`${failedYears} ano(s) falharam na busca`);
+
+    setStatus(warnings.length ? `${countMsg} (${warnings.join(", ")})` : "", warnings.length > 0);
     results.forEach(m => renderMovieLi(m, resultsEl));
 
   } catch (err) {
