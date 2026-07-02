@@ -23,7 +23,7 @@ export function buildDetailHTML(movie: OMDbDetail): string {
   `).join("") ?? "";
 
   const poster = movie.Poster && movie.Poster !== "N/A"
-    ? `<div class="movie-modal-poster"><img src="${movie.Poster}" alt="${movie.Title} poster"></div>`
+    ? `<div class="movie-modal-poster"><img id="modal-poster-img" src="${movie.Poster}" alt="${movie.Title} poster" referrerpolicy="no-referrer" loading="lazy"></div>`
     : `<div class="movie-modal-poster"><div class="movie-modal-poster-placeholder">No poster</div></div>`;
 
   return `

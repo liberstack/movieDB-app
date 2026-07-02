@@ -33,7 +33,6 @@ jobs:
           cp -r src deploy/
           cp index.html deploy/
           cp style.css deploy/
-          cp alien_icon.png deploy/
           cp package.json deploy/
 
       - name: Deploy to GitHub Pages

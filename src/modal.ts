@@ -24,6 +24,17 @@ export function openModal(movie: OMDbDetail): void {
 
   overlay.innerHTML = buildDetailHTML(movie);
   document.getElementById("modal-close-btn")!.addEventListener("click", closeModal);
+
+  const posterImg = document.getElementById("modal-poster-img") as HTMLImageElement | null;
+  if (posterImg) {
+    posterImg.addEventListener("error", () => {
+      const wrapper = posterImg.parentElement;
+      if (wrapper) {
+        wrapper.innerHTML = `<div class="movie-modal-poster-placeholder">No poster</div>`;
+      }
+    }, { once: true });
+  }
+
   requestAnimationFrame(() => overlay!.classList.add("open"));
   document.addEventListener("keydown", onEscKey);
 }

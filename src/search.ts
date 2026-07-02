@@ -3,8 +3,9 @@ import type { OMDbDetail, OMDbSearchResponse } from "./types.js";
 
 // ─── Constants ────────────────────────────────────────────
 
-const API_KEY = "trilogy";
-const BASE    = "https://www.omdbapi.com/";
+const API_KEY            = "trilogy";
+const BASE               = "https://www.omdbapi.com/";
+const DETAIL_CONCURRENCY = 6; // trava o fan-out de requests de detalhe
 
 const GENRES = [
   "Action", "Adventure", "Animation", "Biography", "Comedy",
@@ -46,6 +47,31 @@ function setStatus(msg: string, isError: boolean): void {
   if (!el) return;
   el.textContent = msg;
   el.className   = isError ? "error" : "";
+}
+
+/**
+ * Roda `worker` sobre `items` com no máximo `limit` execuções em paralelo,
+ * em vez de disparar tudo de uma vez com Promise.all. Evita estourar o
+ * rate limit da OMDb em buscas amplas (ex.: filtro de década com muitos IDs).
+ */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function run(): Promise<void> {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, run);
+  await Promise.all(workers);
+  return results;
 }
 
 function buildUrl(title: string, type: string, page: number, y: number | null): string {
@@ -90,11 +116,10 @@ async function fetchIds(
       const total = Math.min(parseInt(data.totalResults ?? "0"), 100);
       const pages = Math.min(Math.ceil(total / 10), 5);
       if (pages > 1) {
-        const extras = await Promise.all(
-          Array.from({ length: pages - 1 }, (_, i) =>
-            fetch(buildUrl(title, type, i + 2, y))
-              .then(r => r.json() as Promise<OMDbSearchResponse>)
-          )
+        const pageNumbers = Array.from({ length: pages - 1 }, (_, i) => i + 2);
+        const extras = await mapLimit(pageNumbers, DETAIL_CONCURRENCY, pageNum =>
+          fetch(buildUrl(title, type, pageNum, y))
+            .then(r => r.json() as Promise<OMDbSearchResponse>)
         );
         for (const p of extras) {
           if (p.Search) {
@@ -188,14 +213,19 @@ async function searchMovies(
 
     setStatus(`Loading details for ${ids.length} results...`, false);
 
-    const details = await Promise.all(
-      ids.map(id =>
-        fetch(`${BASE}?i=${id}&apikey=${API_KEY}&plot=full`)
-          .then(r => r.json() as Promise<OMDbDetail>)
-      )
-    );
+    const details = await mapLimit(ids, DETAIL_CONCURRENCY, async id => {
+      try {
+        const res = await fetch(`${BASE}?i=${id}&apikey=${API_KEY}&plot=full`);
+        return (await res.json()) as OMDbDetail;
+      } catch {
+        return null;
+      }
+    });
+
+    const failedCount = details.filter(d => d === null).length;
 
     const results = details
+      .filter((d): d is OMDbDetail => d !== null)
       .filter(d => matchesFilters(d, genreVal, countryVal, startYear, endYear))
       .sort((a, b) => (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0));
 
@@ -206,8 +236,12 @@ async function searchMovies(
       return;
     }
 
-    setStatus("", false);
-    resultCountEl.textContent = `${results.length} result${results.length !== 1 ? "s" : ""}`;
+    const countMsg = `${results.length} result${results.length !== 1 ? "s" : ""}`;
+    resultCountEl.textContent = countMsg;
+    setStatus(
+      failedCount > 0 ? `${countMsg} (${failedCount} falharam ao carregar)` : "",
+      failedCount > 0
+    );
     results.forEach(m => renderMovieLi(m, resultsEl));
 
   } catch (err) {

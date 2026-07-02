@@ -8,16 +8,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/devgbr86/movie-api-ts.git"
+    "url": "git+https://github.com/liberstack/movie-search-app.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
-    "url": "https://github.com/devgbr86/movie-api-ts/issues"
+    "url": "https://github.com/liberstack/movie-search-app/issues"
   },
-  "homepage": "https://github.com/devgbr86/movie-api-ts#readme",
+  "homepage": "https://github.com/liberstack/movie-search-app#readme",
   "devDependencies": {
     "typescript": "^5.9.3"
   }
