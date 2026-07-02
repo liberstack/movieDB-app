@@ -40,7 +40,7 @@ nebula-movies/
 ├── .gitignore                  # ignora node_modules/ e dist/
 └── .github/
     └── workflows/
-        └── deploy.yml           # build + deploy automático pro GitHub Pages
+        └── deploy.yml           # build + deploy automático pro GitHub Pages (via Actions nativo)
 ```
 
 **Por que `dist/` não vai pro git?** Porque é **gerado**, não é fonte. Todo build artefato (coisa que pode ser recriada a partir do código-fonte) fica de fora do controle de versão — quem precisa dele é a etapa de deploy, que gera na hora (veja a seção 6).
@@ -160,14 +160,20 @@ python3 -m http.server
 
 ## 6. Build e deploy (`.github/workflows/deploy.yml`)
 
-A cada push na branch `main`, o GitHub Actions:
+A cada push na branch `main`, o workflow roda em dois jobs (`build` e `deploy`):
 
+**Job `build`:**
 1. Instala as dependências (`npm install`).
 2. Compila o TypeScript (`npx tsc`) — isso gera `dist/` do zero, já que ele não existe no git.
-3. Monta uma pasta `deploy/` com tudo que o site precisa pra funcionar em produção: `dist/`, `src/`, `index.html`, `style.css`, `package.json`.
-4. Publica o conteúdo de `deploy/` na branch `gh-pages`, via `peaceiris/actions-gh-pages`, que o GitHub Pages serve como site estático.
+3. Monta uma pasta `deploy/` com tudo que o site precisa pra funcionar em produção: `dist/`, `src/`, `index.html`, `style.css`, `package.json`, além de um arquivo `.nojekyll` vazio (impede o GitHub de tentar processar o site como se fosse Jekyll).
+4. Empacota `deploy/` como artifact via `actions/upload-pages-artifact`.
+
+**Job `deploy`:**
+5. Publica esse artifact direto no ambiente `github-pages` via `actions/deploy-pages`.
 
 Ou seja: você nunca builda manualmente pra produção — só dá push na `main` e o pipeline cuida do resto.
+
+**Nota histórica:** a versão anterior desse workflow publicava numa branch `gh-pages` via `peaceiris/actions-gh-pages`, com o Source do repo configurado como "Deploy from a branch". Isso disparava um build automático de Jekyll por cima do conteúdo publicado, o que causava falhas de deploy sem relação com o código em si. A branch `gh-pages` foi removida e o Source do repo (Settings → Pages) foi trocado para **"GitHub Actions"** — isso elimina o Jekyll do processo por completo.
 
 ---
 
